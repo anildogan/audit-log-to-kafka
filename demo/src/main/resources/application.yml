@@ -1,0 +1,23 @@
+spring:
+  main:
+    banner-mode: off
+  application:
+    name: '@project.name@'
+    description: '@project.description@'
+  profiles:
+    active: local
+
+swagger:
+  host:
+    url: localhost:8080
+    protocol: http
+  version: '@version@'
+
+server:
+  port: 8080
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain
+  error:
+    whitelabel:
+      enabled: false

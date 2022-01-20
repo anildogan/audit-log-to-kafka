@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml" />
+    <springProperty scope="context" name="CONSOLE_PATTERN" source="application.console-pattern"/>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="com.auditlogtokafkasourcedemo.demo.configuration.logging.MultiLayoutPattern">
+            <pattern>{"time": "%d", "level": "%p", "source": "%logger{63}:%L", "message": "%replace(%replace(%m%wEx{6}){'[\r\n]+', '\\n'}){'\"', ''}%nopex"}%n</pattern>
+
+            <rule>
+                <logger>com.auditlogtokafkasourcedemo.demo.util.fluentbit.KafkaLogger</logger>
+                <pattern>%msg%n</pattern>
+            </rule>
+        </encoder>
+    </appender>
+
+    <root level="info">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>
