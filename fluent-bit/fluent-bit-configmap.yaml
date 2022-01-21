@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config
+  namespace: logging
+  labels:
+    k8s-app: fluent-bit
+data:
+  # Configuration files: server, input, filters and output
+  # ======================================================
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush         1
+        Log_Level     info
+        Daemon        off
+        Parsers_File  parsers.conf
+        HTTP_Server   On
+        HTTP_Listen   0.0.0.0
+        HTTP_Port     2020
+
+    @INCLUDE input-kubernetes.conf
+    @INCLUDE filter-kubernetes.conf
+    @INCLUDE filter-test-log.conf
+    @INCLUDE output-kafka.conf
+
+  input-kubernetes.conf: |
+    [INPUT]
+        Name              tail
+        Tag               kafkaoutput.<namespace_name>.<container_name>.<pod_name>.<docker_id>-
+        Tag_Regex         (?<pod_name>[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?<namespace_name>[^_]+)_(?<container_name>.+)-(?<docker_id>[a-z0-9]{64})\.log$
+        Path              /var/log/containers/*.log
+        Parser            docker
+        DB                /var/log/flb_kube.db
+        Mem_Buf_Limit     5MB
+        Skip_Long_Lines   On
+        Refresh_Interval  10
+
+  filter-kubernetes.conf: |
+    [FILTER]
+        Name                kubernetes
+        Match               kafkaoutput.*
+        Kube_Tag_Prefix     kafkaoutput.
+        Buffer_Size         0
+        Merge_Log           On
+        Merge_Log_Key       log
+        Keep_Log            Off
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude Off
+        Regex_Parser        k8s-custom-tag
+        
+    
+  filter-test-log.conf: |
+    [FILTER]
+        name   grep
+        match  *
+        regex  $log['kafkaLog']['kafkaEnabled'] true*
+
+  output-kafka.conf: |
+    [OUTPUT]
+        Name           kafka
+        Match          kafkaoutput.*      
+        # insert your kafka broker url  
+        Brokers        localhost:9092
+        Topics         application.log
+        Timestamp_Key  @timestamp
+        Retry_Limit    false
+        # hides errors "Receive failed: Disconnected" when kafka kills idle connections
+        rdkafka.log.connection.close false
+        # producer buffer is not included in http://fluentbit.io/documentation/0.12/configuration/memory_usage.html#estimating
+        rdkafka.queue.buffering.max.kbytes 10240
+        # for logs you'll probably want this ot be 0 or 1, not more
+        rdkafka.request.required.acks 1
+
+  parsers.conf: |
+    [PARSER]
+      Name    k8s-custom-tag
+      Format  regex
+      Regex   ^(?<namespace_name>[^_]+)\.(?<container_name>.+)\.(?<pod_name>[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)\.(?<docker_id>[a-z0-9]{64})-$
+    [PARSER]
+      Name        json
+      Format      json
+      Time_Key    time
+      Time_Format %d/%b/%Y:%H:%M:%S %z
+    [PARSER]
+      Name         docker
+      Format       json
+      Time_Key     time
+      Time_Format  %Y-%m-%dT%H:%M:%S.%L
+      Time_Keep    On
+    [PARSER]
+      Name        cri
+      Format      regex
+      Regex       ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<log>.*)$
+      Time_Key    time
+      Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+    [PARSER]
+      Name        syslog
+      Format      regex
+      Regex       ^\<(?<pri>[0-9]+)\>(?<time>[^ ]* {1,2}[^ ]* [^ ]*) (?<host>[^ ]*) (?<ident>[a-zA-Z0-9_\/\.\-]*)(?:\[(?<pid>[0-9]+)\])?(?:[^\:]*\:)? *(?<message>.*)$
+      Time_Key    time
+      Time_Format %b %d %H:%M:%S
+    [PARSER]
+      Name        envoy
+      Format      regex
+      Regex       ^\[(?<start_time>[^\]]*)\] "(?<method>\S+)(?: +(?<path>[^\"]*?)(?: +\S*)?)? (?<protocol>\S+)" (?<code>[^ ]*) (?<response_flags>[^ ]*) (?<bytes_received>[^ ]*) (?<bytes_sent>[^ ]*) (?<duration>[^ ]*) (?<x_envoy_upstream_service_time>[^ ]*) "(?<x_forwarded_for>[^ ]*)" "(?<user_agent>[^\"]*)" "(?<request_id>[^\"]*)" "(?<authority>[^ ]*)" "(?<upstream_host>[^ ]*)"
+      Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+      Time_Keep   On
+      Time_Key    start_time
